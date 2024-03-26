@@ -110,51 +110,6 @@ end
 # ╔═╡ e7511a99-ddf5-4784-9d63-cd16cc4a0eb8
 @test generate_morse_sequence_vect(['a','b']) == ([0.5, 0.0, 1.0, 0.5, 0.5, 0.5, 1.0, 0.0, 0.0, 0.0], ['a', 'b'])
 
-# ╔═╡ d6a485b7-7fdd-4d5a-bb85-870119401066
-md"""
-Generate a batch of individual morse sequences
-"""
-
-# ╔═╡ f6ef0c3b-8c56-4e13-8ae5-4791ee0b3f63
-generate_morse_sequence_vect(['g','w'])
-
-# ╔═╡ 957833be-5386-4bdc-972e-1e4cf46e4223
-md"""
-Define the neural network
-"""
-
-# ╔═╡ 61dbc4f6-41cc-4008-94a2-f1a2ef945cb0
-begin
-	struct Seq2Seq
-	    enc # Encoding recurrent layers
-	    dec # Decoding recurrent layers
-		out # Fully connected output
-	end
-	Flux.@functor Seq2Seq # Make the structure differentiable
-	
-	# Define behaviour of passing data to an instance of this struct
-	function (m::Seq2Seq)(X)
-	    # Run recurrent layers on all but final two data point
-	    [m.enc(x) for x ∈ X[1:end-2]]
-	    # Pass last two data points through both recurrent layers and 
-		# on through a dense output layer 
-	    [m.out(m.dec(m.enc(x))) for x ∈ X[end-2:end]]
-	end
-end
-
-# ╔═╡ d5af224d-10f5-4e94-ba97-158aa5ef0f2a
-md"""
-Create the morse code decoder using the Seq2One struct
-"""
-
-# ╔═╡ da65fbb7-31bc-4f13-a15a-fb1d0c9ed00f
-function test_net(model, chr)
-	seq = [Float32.(generate_morse_sequence(chr)[1])]
-	Flux.reset!(model)
-	seq_rnn = [hcat([x[i] for x ∈ seq]...) for i ∈ 1:5]
-	(seq, Flux.onecold(model(seq_rnn), collect('a':'z')))
-end
-
 # ╔═╡ 3e462ed4-fa78-4877-afb8-80ff6a660544
 begin
 	function randomCombinations(N::Int)
@@ -174,6 +129,11 @@ begin
 	    return comb_seq
 	end
 end
+
+# ╔═╡ d6a485b7-7fdd-4d5a-bb85-870119401066
+md"""
+Generate a batch of individual morse sequences
+"""
 
 # ╔═╡ b9b23ecc-e811-4fcf-8389-2cbba13f517d
 function generate_morse_sequence_batch(nseq::Int, lgth::Int)
@@ -195,16 +155,13 @@ function generate_morse_sequence_batch(nseq::Int, lgth::Int)
 	seqs, labs
 end
 
-# ╔═╡ e5febdc9-b56a-42d6-adea-a8d536675fdd
-generate_morse_sequence_batch(1,2)
-
 # ╔═╡ 7735380e-1456-428b-8b26-b243a1e43e8b
 begin
 	Random.seed!(31415927)   # Set seed for replication
 	
-	# Train and test data sets with 50 x 26 observations each
-	Xtrain, ytrain = generate_morse_sequence_batch(50,2)
-	Xtest, ytest = generate_morse_sequence_batch(50,2)
+	# Train and test data sets with 10 x 26 observations each
+	Xtrain, ytrain = generate_morse_sequence_batch(10,2)
+	Xtest, ytest = generate_morse_sequence_batch(10,2)
 	
 	# Define an accuracy measure
 	function accuracy(m, X, y)
@@ -216,8 +173,37 @@ begin
 	end
 end
 
+# ╔═╡ 957833be-5386-4bdc-972e-1e4cf46e4223
+md"""
+Define the neural network
+"""
+
+# ╔═╡ 61dbc4f6-41cc-4008-94a2-f1a2ef945cb0
+begin
+	struct Seq2Seq
+	    enc # Encoding recurrent layers
+	    dec # Decoding recurrent layers
+		out # Fully connected output
+	end
+	Flux.@functor Seq2Seq # Make the structure differentiable
+	
+	# Define behaviour of passing data to an instance of this struct
+	function (m::Seq2Seq)(X)
+	    # Run recurrent layers on all but final two data point
+	    [m.enc(x) for x ∈ X[1:end-1]]
+	    # Pass last two data points through both recurrent layers and 
+		# on through a dense output layer 
+	    [m.out(m.dec(m.enc(x))) for x ∈ X[end-1:end]]
+	end
+end
+
+# ╔═╡ d5af224d-10f5-4e94-ba97-158aa5ef0f2a
+md"""
+Create the morse code decoder using the Seq2One struct
+"""
+
 # ╔═╡ 4ec44737-df57-43b2-a451-6ee35c48d38f
-let ytrain = hcat(ytrain...), ytest = hcat(ytest...), seqlen=10
+begin
 
 	# map two 5x2 element sequence of scalar inputs (dots and dashes) to a 
 	# sequence of two 26 element alphabet vector 
@@ -236,16 +222,23 @@ let ytrain = hcat(ytrain...), ytest = hcat(ytest...), seqlen=10
 	
 	opt = ADAM()
 	θ = Flux.params(seq2seq) # Keep track of the trainable parameters
-	epochs = 1 # Train the model for 10 epochs
+	epochs = 1 # Train the model for 1 epoch
+	seqlen = 10
 	for epoch ∈ 1:epochs
-	    # Train the model using batches of size 26
-	    for idx ∈ Iterators.partition(shuffle(1:size(Xtrain, 1)), 26)
+	    # Train the model using batches of size 10
+	    for idx ∈ Iterators.partition(shuffle(1:size(Xtrain, 1)), 10)
 	        Flux.reset!(seq2seq) # Reset hidden states
-	        X, y = Xtrain[idx], ytrain[:,idx]
-			# Reshape X for RNN format
+	        X, y = Xtrain[idx], ytrain[idx]
+			println("ytrain[idx]: ", ytrain[idx], " size(ytrain[idx]): ", size(ytrain[idx]))
+			# Reshape X & y for RNN format
 	        X = [hcat([x[i] for x ∈ X]...) for i ∈ 1:seqlen]
+			y = hcat(y...) 
+			println("X: ", X, " size: ", size(X))
+			println("y: ", y, " size: ", size(y))
+			ŷ = seq2seq(X)
+			println("ŷ: ", seq2seq(X), " size(ŷ): ", size(ŷ), " size(ŷ[1]): ", size(ŷ[1]))
 	        ∇ = gradient(θ) do 
-	            Flux.logitcrossentropy(seq2seq(X), y)
+	            Flux.logitcrossentropy(hcat(seq2seq(X)...), y)				
 	        end
 	        Flux.update!(opt, θ, ∇)
 	    end
@@ -254,17 +247,37 @@ let ytrain = hcat(ytrain...), ytest = hcat(ytest...), seqlen=10
 	# Reshape full input for RNN format
 	Xtrain_rnn = [hcat([x[i] for x ∈ Xtrain]...) for i ∈ 1:seqlen]
 	Xtest_rnn = [hcat([x[i] for x ∈ Xtest]...) for i ∈ 1:seqlen]
-	
-	trainAcc = accuracy(seq2seq, Xtrain_rnn, ytrain)
+	ytrain_rnn = [hcat([y[i] for y ∈ ytrain]...) for i ∈ 1:26]
+	ytest_rnn = [hcat([y[i] for y ∈ ytest]...) for i ∈ 1:26]
+
+	trainAcc = accuracy(seq2seq, Xtrain_rnn, ytrain_rnn)
 	@printf("\nTrain accuracy: %3.2f%%\n", trainAcc)
 	
-	testAcc = accuracy(seq2seq, Xtest_rnn, ytest)
+	testAcc = accuracy(seq2seq, Xtest_rnn, ytest_rnn)
 	@printf("Test accuracy: %3.2f%%\n", testAcc)
 	println()
 
 	# Test the net on the full alphabet
-	[println(test_net(seq2seq, x)) for x in collect('a':'z')]
+	#[println(test_net(seq2seq, x)) for x in collect('a':'z')]
+	
 end;
+
+# ╔═╡ da65fbb7-31bc-4f13-a15a-fb1d0c9ed00f
+function test_net(model, chr)
+	seq = [Float32.(generate_morse_sequence(chr)[1])]
+	Flux.reset!(model)
+	seq_rnn = [hcat([x[i] for x ∈ seq]...) for i ∈ 1:5]
+	(seq, Flux.onecold(model(seq_rnn), collect('a':'z')))
+end
+
+# ╔═╡ 6c16fb45-af7a-4253-9002-a844e303d752
+Iterators.partition(shuffle(1:size(Xtrain, 1)), 26)
+
+# ╔═╡ ef81e612-64c6-4369-8731-a3d7443f1c2b
+hcat(ytrain[1]...)
+
+# ╔═╡ c4296db8-b5bc-4924-8fc9-253e0850f6da
+ytrain
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1850,16 +1863,17 @@ version = "1.4.1+1"
 # ╠═88f7c198-0270-4da6-8248-9c91e86fbd18
 # ╠═fcaac785-5827-4955-bc4a-eed215cace26
 # ╠═e7511a99-ddf5-4784-9d63-cd16cc4a0eb8
+# ╠═3e462ed4-fa78-4877-afb8-80ff6a660544
 # ╟─d6a485b7-7fdd-4d5a-bb85-870119401066
 # ╠═b9b23ecc-e811-4fcf-8389-2cbba13f517d
-# ╠═f6ef0c3b-8c56-4e13-8ae5-4791ee0b3f63
-# ╠═e5febdc9-b56a-42d6-adea-a8d536675fdd
 # ╠═7735380e-1456-428b-8b26-b243a1e43e8b
 # ╟─957833be-5386-4bdc-972e-1e4cf46e4223
 # ╠═61dbc4f6-41cc-4008-94a2-f1a2ef945cb0
 # ╟─d5af224d-10f5-4e94-ba97-158aa5ef0f2a
 # ╠═4ec44737-df57-43b2-a451-6ee35c48d38f
 # ╠═da65fbb7-31bc-4f13-a15a-fb1d0c9ed00f
-# ╠═3e462ed4-fa78-4877-afb8-80ff6a660544
+# ╠═6c16fb45-af7a-4253-9002-a844e303d752
+# ╠═ef81e612-64c6-4369-8731-a3d7443f1c2b
+# ╠═c4296db8-b5bc-4924-8fc9-253e0850f6da
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
